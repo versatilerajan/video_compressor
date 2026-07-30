@@ -15,6 +15,7 @@
     --accent-dim: #2a4a8a;
     --success: #35c47c;
     --error: #ef5a5a;
+    --warn: #e8b93f;
     --radius: 12px;
   }
 
@@ -117,7 +118,27 @@
   .status-text { margin: 10px 0 0; font-size: 13px; color: var(--text-dim); }
 
   .result-section { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); }
-  .result-section h2 { margin: 0 0 16px; font-size: 17px; color: var(--success); }
+  .result-section h2 { margin: 0 0 4px; font-size: 17px; color: var(--success); display: flex; align-items: center; gap: 8px; }
+
+  .duplicate-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--warn);
+    border: 1px solid var(--warn);
+    border-radius: 999px;
+    padding: 2px 8px;
+  }
+
+  .thumbnail-preview {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    margin: 14px 0;
+    display: block;
+  }
 
   .result-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
   .result-stat { background: #0f1115; border: 1px solid var(--border); border-radius: 8px; padding: 12px; text-align: center; }
@@ -134,8 +155,10 @@
     padding: 11px;
     border: 1px solid var(--accent-dim);
     border-radius: 8px;
+    margin-bottom: 10px;
   }
   .blob-link:hover { background: rgba(79, 140, 255, 0.08); }
+  .blob-link:last-of-type { margin-bottom: 0; }
 
   .secondary-btn {
     width: 100%;
@@ -192,7 +215,8 @@
       </section>
 
       <section id="result-section" class="result-section hidden">
-        <h2>Done</h2>
+        <h2>Done <span id="duplicate-badge" class="duplicate-badge hidden">Duplicate</span></h2>
+        <img id="thumbnail-preview" class="thumbnail-preview hidden" alt="Video thumbnail" />
         <div class="result-grid">
           <div class="result-stat">
             <span class="result-label">Original size</span>
@@ -207,7 +231,8 @@
             <span id="reduction" class="result-value">&mdash;</span>
           </div>
         </div>
-        <a id="blob-link" class="blob-link" href="#" target="_blank" rel="noopener">Open compressed video in Blob Storage &rarr;</a>
+        <a id="blob-link" class="blob-link hidden" href="#" target="_blank" rel="noopener">Open compressed video in Blob Storage &rarr;</a>
+        <a id="hls-link" class="blob-link hidden" href="#" target="_blank" rel="noopener">Open HLS playlist &rarr;</a>
         <button type="button" id="reset-btn" class="secondary-btn">Upload another video</button>
       </section>
 
@@ -219,7 +244,7 @@
   </div>
 
   <script>
-    const API_BASE = "https://videopipeline-dfgxgvaacbbhazan.indiasouthcentral-01.azurewebsites.net";
+    const API_BASE = "https://videopropipeline.nicesky-18da433c.centralindia.azurecontainerapps.io";
     const MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024;
     const POLL_INTERVAL_MS = 3000;
     const POLL_TIMEOUT_MS = 15 * 60 * 1000;
@@ -238,10 +263,13 @@
     const statusText = document.getElementById("status-text");
 
     const resultSection = document.getElementById("result-section");
+    const duplicateBadge = document.getElementById("duplicate-badge");
+    const thumbnailPreview = document.getElementById("thumbnail-preview");
     const originalSizeEl = document.getElementById("original-size");
     const compressedSizeEl = document.getElementById("compressed-size");
     const reductionEl = document.getElementById("reduction");
     const blobLink = document.getElementById("blob-link");
+    const hlsLink = document.getElementById("hls-link");
     const resetBtn = document.getElementById("reset-btn");
 
     const errorSection = document.getElementById("error-section");
@@ -265,6 +293,11 @@
       progressSection.classList.add("hidden");
       resultSection.classList.add("hidden");
       errorSection.classList.add("hidden");
+      duplicateBadge.classList.add("hidden");
+      thumbnailPreview.classList.add("hidden");
+      thumbnailPreview.src = "";
+      blobLink.classList.add("hidden");
+      hlsLink.classList.add("hidden");
       progressFill.style.width = "0%";
       progressPercent.textContent = "0%";
       if (pollTimer) {
@@ -315,7 +348,7 @@
 
     function handleFileSelected(file) {
       if (file.size > MAX_FILE_SIZE_BYTES) {
-        showError(`"${file.name}" is ${formatBytes(file.size)}, which exceeds the 100 MB limit.`);
+        showError(`"${file.name}" is ${formatBytes(file.size)}, which exceeds the 500 MB limit.`);
         selectedFile = null;
         submitBtn.disabled = true;
         fileNameLabel.textContent = "";
@@ -349,7 +382,7 @@
             try {
               detail = JSON.parse(xhr.responseText).detail || detail;
             } catch (_) {
-              /* ignore parse error, use default detail */
+              detail = detail;
             }
             reject(new Error(detail));
           }
@@ -386,8 +419,7 @@
     }
 
     const STATUS_LABELS = {
-      uploading: "Uploading\u2026",
-      queued: "Queued for processing\u2026",
+      uploaded: "Queued for processing\u2026",
       processing: "Analyzing video\u2026",
       compressing: "Compressing to target size\u2026",
       uploading_result: "Uploading compressed video\u2026",
@@ -427,6 +459,19 @@
       progressSection.classList.add("hidden");
       resultSection.classList.remove("hidden");
 
+      if (video.is_duplicate) {
+        duplicateBadge.classList.remove("hidden");
+      } else {
+        duplicateBadge.classList.add("hidden");
+      }
+
+      if (video.thumbnail_url) {
+        thumbnailPreview.src = video.thumbnail_url;
+        thumbnailPreview.classList.remove("hidden");
+      } else {
+        thumbnailPreview.classList.add("hidden");
+      }
+
       originalSizeEl.textContent = formatBytes(video.original_size);
       compressedSizeEl.textContent = formatBytes(video.compressed_size);
 
@@ -442,6 +487,13 @@
         blobLink.classList.remove("hidden");
       } else {
         blobLink.classList.add("hidden");
+      }
+
+      if (video.hls_url) {
+        hlsLink.href = video.hls_url;
+        hlsLink.classList.remove("hidden");
+      } else {
+        hlsLink.classList.add("hidden");
       }
     }
 
